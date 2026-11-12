@@ -1,0 +1,19 @@
+{
+  "name": "המחברת החכמה",
+  "short_name": "המחברת",
+  "description": "מחברת חכמה לילדים: מערכת שעות, מחברות, שיעור חופשי וניהול הורים",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F5F2EA",
+  "theme_color": "#2456C8",
+  "categories": ["education", "kids"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
