@@ -1,4 +1,4 @@
-// דף המחברת: הקלדה, כתיבה ביד (עט או אצבע) והקלטה. ההורים רואים את אותו דף לקריאה בלבד.
+// דף המחברת: הקלדה, כתיבה ביד (עט או אצבע) והקלטה. אפשר להקליט ובמקביל להקליד או לכתוב. ההורים רואים את אותו דף לקריאה בלבד.
 (function () {
   const A = window.App;
   const h = A.h;
@@ -23,9 +23,8 @@
     let idx;
     if (readOnly) idx = pages.length - 1;
     else {
-      // כל פתיחה מתחילה בדף חדש ונקי. הוא נשמר רק כשכותבים בו, וממשיך את הנושא של הדף האחרון, כמו חוצץ
-      const previous = pages[pages.length - 1];
-      pages.push(newPage(subject.id, previous ? previous.topic || '' : ''));
+      // כל פתיחה מתחילה בדף חדש ונקי עם התאריך של היום. הוא נשמר רק כשכותבים בו
+      pages.push(newPage(subject.id, ''));
       idx = pages.length - 1;
     }
 
@@ -240,27 +239,30 @@
     const ro = new ResizeObserver(() => layout());
     ro.observe(paper);
 
-    // סרגלים
-    const where = h('div', { class: 'where' });
-    const prevBtn = h('button', { class: 'btn sm', onclick: () => moveTo(idx - 1) }, '→ דף קודם');
-    const nextBtn = h('button', { class: 'btn sm', onclick: () => moveTo(idx + 1) }, 'דף הבא ←');
-    const pager = h('div', { class: 'pager' }, prevBtn, where, nextBtn);
+    // שורת התאריך: חיצים לדפדוף, התאריך, וליד התאריך אפשר לכתוב נושא
+    const dateLabel = h('b', { class: 'date-label' });
+    const prevBtn = h('button', { class: 'btn sm arrow', 'aria-label': 'דף קודם', onclick: () => moveTo(idx - 1) }, '→');
+    const nextBtn = h('button', { class: 'btn sm arrow', 'aria-label': 'דף הבא', onclick: () => moveTo(idx + 1) }, '←');
 
     // הנושא של הדף משמש כחוצץ במחברת
     const topicList = h('datalist', { id: 'page-topics' });
     const savedPages = () => pages.filter((p) => persisted.has(p.id) && (!pageEmpty(p) || p.hasAudio));
     const topicNames = () => [...new Set(savedPages().map((p) => (p.topic || '').trim()).filter(Boolean))];
     const topicInput = h('input', {
-      class: 'input',
+      class: 'topic-input',
       id: 'page-topic',
       list: 'page-topics',
       autocomplete: 'off',
       maxLength: 40,
       readOnly,
-      placeholder: readOnly ? 'בלי נושא' : 'למשל: שברים',
+      'aria-label': 'נושא הדף',
+      placeholder: readOnly ? '' : 'נושא (לא חובה)',
       oninput: () => { current().topic = topicInput.value; scheduleSave(); }
     });
-    const topicRow = h('div', { class: 'topic-row' }, h('label', { for: 'page-topic' }, '🔖 נושא:'), topicInput, topicList);
+    const dateRow = h('div', { class: 'date-row' },
+      prevBtn,
+      h('div', { class: 'date-box' }, dateLabel, topicInput, topicList),
+      nextBtn);
 
     const listBtn = h('button', { class: 'btn sm', onclick: () => openList() });
     function openList() {
@@ -311,13 +313,12 @@
       });
     }
 
-    const toolBtn = (id, icon, label) => h('button', {
-      class: 'btn', 'data-tool': id, onclick: () => setMode(id)
-    }, h('span', { class: 'ic', 'aria-hidden': 'true' }, icon), label);
-    const tools = readOnly ? null : h('div', { class: 'nb-tools' },
-      toolBtn('type', '⌨️', 'הקלדה'), toolBtn('record', '🎤', 'הקלטה'));
+    // הכלים: כפתור צף בצד, כדי שלמעלה יהיה רק הדף
+    const allowed = readOnly ? { type: false, write: false, record: false } : A.state.settings.tools;
+    const penModes = ['type', 'write'].filter((m) => allowed[m]);
+    const MODE_ICON = { type: '⌨️', write: '✏️' };
 
-    const penBar = h('div', { class: 'pen-bar', hidden: true });
+    const penBar = h('div', { class: 'pen-bar float', hidden: true });
     function renderPenBar() {
       if (readOnly) return;
       penBar.replaceChildren(
@@ -327,37 +328,58 @@
           'aria-label': 'צבע עט',
           onclick: () => { color = c; eraser = false; renderPenBar(); }
         })),
-        h('button', { class: `btn sm ${eraser ? 'on' : ''}`, onclick: () => { eraser = !eraser; renderPenBar(); } }, '🧽 מחק'),
+        h('button', { class: `btn sm ${eraser ? 'on' : ''}`, 'aria-label': 'מחק', title: 'מחק', onclick: () => { eraser = !eraser; renderPenBar(); } }, '🧽'),
         h('button', {
-          class: 'btn sm', disabled: !undoStack.length,
+          class: 'btn sm', disabled: !undoStack.length, 'aria-label': 'ביטול', title: 'ביטול',
           onclick: () => {
             if (!undoStack.length) return;
             current().strokes = undoStack.pop();
             redraw(); layout(); scheduleSave(); renderPenBar();
           }
-        }, '↩️ ביטול'),
-        h('span', { class: 'small muted' }, 'לגלילה: שתי אצבעות')
+        }, '↩️')
       );
     }
 
-    // הקלטה
-    const recBtn = h('button', { class: 'btn rec-btn', onclick: () => (recActive ? stopRecording() : startRecording()) });
-    const liveWords = h('p', { class: 'rec-live', hidden: true, role: 'status' });
-    // הקלטה: כפתור אחד שומר את הקול, ובמקביל כותב את המילים בדף
-    const recPanel = h('div', { class: 'rec-panel', hidden: true }, recBtn, liveWords,
-      h('p', { class: 'small muted rec-note' }, A.speechSupported()
-        ? 'כדי שהמילים ייכתבו צריך אינטרנט. הקול נשמר גם בלי.'
-        : 'במכשיר הזה נשמר רק הקול. כדי שהמילים ייכתבו, אפשר ללחוץ על המיקרופון שבמקלדת ולדבר.'));
+    const fabBtn = h('button', { class: 'fab', 'aria-expanded': 'false', 'aria-label': 'כלים', onclick: () => toggleMenu() });
+    const fabMenu = h('div', { class: 'fab-menu', hidden: true });
+    const recPill = h('button', { class: 'rec-pill', hidden: true, 'aria-label': 'עצירת ההקלטה', onclick: () => stopRecording() });
+    const fab = readOnly || (penModes.length < 2 && !allowed.record) ? null
+      : h('div', { class: 'fab-wrap' }, fabMenu, h('div', { class: 'fab-row' }, fabBtn, recPill));
+    const menuItem = (icon, label, on, onclick, cls = '') => h('button', { class: `fab-item ${on ? 'on' : ''} ${cls}`, onclick }, h('span', { class: 'ic', 'aria-hidden': 'true' }, icon), label);
+    function drawFab() {
+      if (!fab) return;
+      fabBtn.classList.toggle('rec', recActive);
+      fabBtn.replaceChildren(h('span', { 'aria-hidden': 'true' }, fabMenu.hidden ? (penModes.length ? MODE_ICON[mode] || '✏️' : '🎤') : '✕'));
+      fabMenu.replaceChildren(
+        ...penModes.map((m) => menuItem(MODE_ICON[m], m === 'type' ? 'הקלדה' : 'כתיבה ביד', mode === m, () => { setMode(m); closeMenu(); })),
+        allowed.record && (recActive
+          ? menuItem('⏹️', 'לעצור את ההקלטה', false, () => { stopRecording(); closeMenu(); }, 'stop')
+          : menuItem('🔴', 'להקליט את השיעור', false, () => { closeMenu(); startRecording(); }, 'record'))
+      );
+    }
+    function toggleMenu() {
+      // רק הקלטה: הכפתור עצמו מתחיל ועוצר
+      if (!penModes.length) { if (recActive) stopRecording(); else startRecording(); return; }
+      fabMenu.hidden = !fabMenu.hidden;
+      fabBtn.setAttribute('aria-expanded', fabMenu.hidden ? 'false' : 'true');
+      drawFab();
+    }
+    function closeMenu() {
+      fabMenu.hidden = true;
+      fabBtn.setAttribute('aria-expanded', 'false');
+      drawFab();
+    }
+
+    // הקלטה: הקול נשמר, ובמכשירים שמאפשרים גם המילים נשמרות ליד ההקלטה (לא בתוך הדף, כדי לא להפריע להקלדה)
     let speech = null;
 
-    // תמלול חי: המילים שנאמרות נכתבות בסוף הדף בזמן ההקלטה
-    function startSpeech(page) {
+    let heard = { committed: '', now: '' };
+    const transcript = () => (heard.committed + heard.now).trim();
+    function startSpeech() {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR || readOnly) return;
       if (speech) stopSpeech();
-      const base = page.text.trimEnd() ? page.text.trimEnd() + '\n' : '';
       // מקשיבים למשפט אחד בכל פעם ומתחילים מחדש. בהקשבה רצופה, באנדרואיד המילים חוזרות כמה פעמים
-      let committed = '';
       let lastSentence = '';
       let sentence = '';
       let interim = '';
@@ -366,16 +388,6 @@
       sr.continuous = false;
       sr.interimResults = true;
       sr.maxAlternatives = 1;
-      const write = () => {
-        const now = sentence || interim;
-        const text = (base + committed + now).replace(/\s+$/, '');
-        page.text = text;
-        if (current().id === page.id) {
-          textarea.value = text;
-          layout();
-        }
-        scheduleSave();
-      };
       sr.onresult = (ev) => {
         interim = '';
         for (let i = 0; i < ev.results.length; i++) {
@@ -384,56 +396,30 @@
           if (ev.results[i].isFinal) sentence = t;
           else interim = t;
         }
-        liveWords.textContent = interim ? `שומעים: ${interim}` : 'אפשר להמשיך לדבר';
-        write();
+        heard.now = sentence || interim;
       };
       sr.onerror = (ev) => {
         if (ev.error === 'no-speech' || ev.error === 'aborted') return;
-        // המיקרופון תפוס בגלל שמירת הקול: מוותרים על הקול, וממשיכים לכתוב מילים
-        if (ev.error === 'audio-capture' && recorder) {
-          setMicConflict();
-          const r = recorder;
-          recorder = null;
-          r.discard = true;
-          r.stop();
-          speech = null;
-          setTimeout(() => { if (recActive) startSpeech(page); }, 400);
-          return;
-        }
-        let why = {
-          'not-allowed': 'צריך לבקש ממבוגר לאשר את המיקרופון.',
-          'service-not-allowed': 'צריך לבקש ממבוגר להפעיל הכתבה בהגדרות של המכשיר.',
-          network: 'אין אינטרנט עכשיו, ולכן המחברת לא יכולה לכתוב את הדיבור.',
-          'audio-capture': 'המיקרופון עסוק, אז המילים לא נכתבות.',
-          'language-not-supported': 'המכשיר הזה לא מבין עברית בדיבור.'
-        }[ev.error] || 'המילים לא נכתבות כרגע.';
+        // המיקרופון תפוס בגלל שמירת הקול: הקול חשוב יותר, אז מוותרים על המילים
+        if (ev.error === 'audio-capture' && recorder) setMicConflict();
         speech = null;
-        if (ev.error !== 'not-allowed') why += ' אפשר גם ללחוץ על המיקרופון שבמקלדת ולדבר.';
-        if (recorder) why = `הקול נשמר. ${why}`;
-        liveWords.hidden = false;
-        liveWords.textContent = why;
       };
       sr.onend = () => {
-        // המשפט נגמר: מוסיפים אותו פעם אחת, ולא אם הוא בדיוק המשפט הקודם
         if (sentence && sentence !== lastSentence) {
-          committed += sentence + ' ';
+          heard.committed += sentence + ' ';
           lastSentence = sentence;
         }
         sentence = '';
         interim = '';
-        write();
+        heard.now = '';
         if (speech === sr) { try { sr.start(); } catch (e) { /* כבר פועל */ } }
       };
       speech = sr;
-      liveWords.hidden = false;
-      liveWords.textContent = 'מקליטים. אפשר לדבר 🙂';
-      note('type');
-      try { sr.start(); } catch (e) { speech = null; liveWords.textContent = 'משהו לא עבד. אפשר לנסות שוב.'; }
+      try { sr.start(); } catch (e) { speech = null; }
     }
     function stopSpeech() {
       const sr = speech;
       speech = null;
-      liveWords.hidden = true;
       if (sr) { try { sr.stop(); } catch (e) { /* כבר נעצר */ } }
     }
     const recList = h('div', { class: 'rec-list' });
@@ -448,54 +434,68 @@
     const setMicConflict = () => { try { localStorage.setItem(conflictKey, '1'); } catch (e) { /* בלי זיכרון */ } };
 
     const setRecLabel = () => {
+      if (!fab) return;
+      recPill.hidden = !recActive;
       if (recActive) {
         const sec = Math.floor((Date.now() - recStart) / 1000);
         const mm = String(Math.floor(sec / 60)).padStart(2, '0');
         const ss = String(sec % 60).padStart(2, '0');
-        recBtn.className = 'btn rec-btn rec';
-        recBtn.replaceChildren('⏹️ סיימתי ', A.ltr(`${mm}:${ss}`));
-      } else {
-        recBtn.className = 'btn rec-btn';
-        recBtn.textContent = A.speechSupported() ? '🔴 להקליט, והמילים נכתבות בדף' : '🔴 להקליט';
+        recPill.replaceChildren(h('i', { class: 'rec-dot', 'aria-hidden': 'true' }), A.ltr(`${mm}:${ss}`), ' ⏹️');
       }
+      drawFab();
     };
-    setRecLabel();
 
-    // הקלטה: קודם מתחילה כתיבת המילים, ואז שמירת הקול מצטרפת אם המכשיר מאפשר
+    // שמירת הקלטה: הקול (אם יש) והמילים ששמענו
+    async function saveRecording(page, blob, dur, ts, text) {
+      if (!blob && !text) return;
+      const row = { id: A.newId(), pageId: page.id, subjectId: page.subjectId, blob: blob || null, mime: blob ? blob.type : '', dur, ts, text: text || '' };
+      persisted.add(page.id);
+      page.hasAudio = true;
+      await A.db.put('pages', page);
+      await A.db.put('audio', row);
+      note('record');
+      if (mounted && current().id === page.id) {
+        saveNote.textContent = 'נשמר ✓';
+        await loadAudio();
+      }
+    }
+
+    // הקלטה: קודם הקול (הכי חשוב), ואז המילים מצטרפות אם המכשיר מאפשר
     async function startRecording() {
       const page = current();
-      const wantWords = A.speechSupported() && !readOnly;
+      const canWords = A.speechSupported() && !readOnly;
       const canAudio = !!(navigator.mediaDevices && window.MediaRecorder);
-      if (!wantWords && !canAudio) {
+      if (!canWords && !canAudio) {
         A.modal({ title: 'אין אפשרות להקליט', body: 'הדפדפן הזה לא תומך בהקלטה. כדאי לפתוח את האפליקציה מהקישור המאובטח (https).', actions: [{ label: 'הבנתי', class: 'primary' }] });
         return;
       }
       recActive = true;
       wordsHeard = false;
+      heard = { committed: '', now: '' };
       recStart = Date.now();
       recTick = setInterval(setRecLabel, 500);
       setRecLabel();
-      if (wantWords) startSpeech(page);
-      if (!canAudio || (wantWords && micConflict())) return;
-      if (wantWords) await new Promise((r) => setTimeout(r, 700));
+      if (canAudio) {
+        const ok = await startAudio(page, canWords);
+        if (!ok && !canWords) { recActive = false; clearInterval(recTick); setRecLabel(); return; }
+      }
       if (!recActive) return;
-      await startAudio(page, wantWords);
+      if (canWords && (!canAudio || !micConflict())) {
+        if (canAudio) await new Promise((r) => setTimeout(r, 700));
+        if (recActive) startSpeech();
+      }
+      A.toast('מקליטים 🎤 אפשר להמשיך לכתוב');
     }
 
-    async function startAudio(page, wantWords) {
+    async function startAudio(page, canWords) {
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       } catch (err) {
-        if (!wantWords) {
-          recActive = false;
-          clearInterval(recTick);
-          setRecLabel();
-          A.modal({ title: 'אין גישה למיקרופון', body: 'צריך לאשר למחברת להשתמש במיקרופון, בחלון שהדפדפן מציג או בהגדרות המכשיר.', actions: [{ label: 'הבנתי', class: 'primary' }] });
-        }
-        return;
+        if (!canWords) A.modal({ title: 'אין גישה למיקרופון', body: 'צריך לאשר למחברת להשתמש במיקרופון, בחלון שהדפדפן מציג או בהגדרות המכשיר.', actions: [{ label: 'הבנתי', class: 'primary' }] });
+        return false;
       }
-      if (!recActive) { stream.getTracks().forEach((t) => t.stop()); return; }
+      if (!recActive) { stream.getTracks().forEach((t) => t.stop()); return false; }
       // מד עוצמה: אם הקול שנשמר שקט לגמרי, המיקרופון היה תפוס בשביל המילים
       let peak = 0;
       let meter = null;
@@ -520,36 +520,25 @@
         stream.getTracks().forEach((t) => t.stop());
         clearInterval(meter);
         if (actx) actx.close().catch(() => {});
-        if (wantWords && wordsHeard && peak < 3) { rec.discard = true; setMicConflict(); }
-        if (rec.discard) {
-          if (mounted) {
-            liveWords.hidden = false;
-            liveWords.textContent = 'במכשיר הזה המחברת כותבת את המילים, בלי לשמור את הקול.';
-          }
-          return;
-        }
-        const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
-        const row = { id: A.newId(), pageId: page.id, subjectId: page.subjectId, blob, mime: blob.type, dur: Date.now() - started, ts: started };
-        persisted.add(page.id);
-        page.hasAudio = true;
-        await A.db.put('pages', page);
-        await A.db.put('audio', row);
-        note('record');
-        if (mounted && current().id === page.id) {
-          saveNote.textContent = 'נשמר ✓';
-          await loadAudio();
-        }
+        let blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+        // הקול יצא שקט כי המילים תפסו את המיקרופון: שומרים את המילים, ובפעם הבאה רק קול
+        if (rec.words && peak < 3) { blob = null; setMicConflict(); }
+        await saveRecording(page, blob, Date.now() - started, started, rec.words || '');
       };
       rec.start();
       recorder = rec;
+      return true;
     }
     function stopRecording() {
       if (!recActive) return;
       recActive = false;
       clearInterval(recTick);
+      const words = wordsHeard ? transcript() : '';
       stopSpeech();
-      if (recorder) { recorder.stop(); recorder = null; }
+      if (recorder) { recorder.words = words; recorder.stop(); recorder = null; }
+      else if (words) saveRecording(current(), null, Date.now() - recStart, recStart, words).catch(console.error);
       setRecLabel();
+      A.toast('ההקלטה נשמרה ✓');
     }
 
     async function loadAudio() {
@@ -557,11 +546,22 @@
       audioUrls = [];
       audioRows = (await A.db.byIndex('audio', 'pageId', current().id)).sort((a, b) => a.ts - b.ts);
       recList.replaceChildren(...audioRows.map((row, i) => {
-        const url = URL.createObjectURL(row.blob);
-        audioUrls.push(url);
+        const url = row.blob ? URL.createObjectURL(row.blob) : null;
+        if (url) audioUrls.push(url);
         return h('div', { class: 'rec-item' },
           h('b', null, `🎧 הקלטה ${i + 1}`),
-          h('audio', { controls: true, src: url, preload: 'metadata' }),
+          url && h('audio', { controls: true, src: url, preload: 'metadata' }),
+          row.text && h('p', { class: 'rec-text' }, row.text),
+          row.text && !readOnly && allowed.type && h('button', {
+            class: 'btn sm',
+            onclick: () => {
+              const p = current();
+              p.text = (p.text.trimEnd() ? p.text.trimEnd() + '\n' : '') + row.text;
+              textarea.value = p.text;
+              note('type'); layout(); scheduleSave();
+              A.toast('המילים נוספו לדף');
+            }
+          }, '📝 להוסיף לדף'),
           !readOnly && h('button', {
             class: 'btn sm danger',
             'aria-label': `מחיקת הקלטה ${i + 1}`,
@@ -578,15 +578,12 @@
 
     // מעבר בין מצבים ודפים
     function setMode(m, opening) {
-      if (recActive && m !== 'record') stopRecording();
-      if (speech && m !== 'record') stopSpeech();
       mode = m;
-      if (tools) tools.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === m));
       paper.classList.toggle('writing', m === 'write');
       textarea.readOnly = readOnly || m !== 'type';
       penBar.hidden = m !== 'write';
-      recPanel.hidden = m !== 'record';
       if (m === 'write') renderPenBar();
+      drawFab();
       if (m === 'type' && !readOnly && !opening) textarea.focus({ preventScroll: true });
     }
 
@@ -596,13 +593,10 @@
       textarea.value = p ? p.text : '';
       prevBtn.disabled = idx <= 0;
       nextBtn.disabled = idx >= pages.length - 1;
-      where.replaceChildren(
-        h('div', null, p ? A.fmtDate(p.date) : ''),
-        h('div', { class: 'muted' }, p && !persisted.has(p.id) ? 'דף חדש' : `דף ${idx + 1} מתוך ${savedPages().length}`)
-      );
+      dateLabel.textContent = p ? A.fmtDate(p.date) : '';
       topicInput.value = p ? p.topic || '' : '';
       topicList.replaceChildren(...topicNames().map((n) => h('option', { value: n })));
-      listBtn.textContent = `📂 דפים קודמים (${savedPages().length})`;
+      listBtn.textContent = savedPages().length ? `📂 הדפים (${savedPages().length})` : '📂 הדפים';
       saveNote.textContent = '';
       W = 0; H = 0;
       layout();
@@ -626,7 +620,7 @@
       if (recActive) stopRecording();
       if (speech) stopSpeech();
       await saveNow();
-      pages.push(newPage(subject.id, current().topic || ''));
+      pages.push(newPage(subject.id, ''));
       idx = pages.length - 1;
       window.scrollTo(0, 0);
       await showPage();
@@ -645,21 +639,20 @@
 
     root.append(
       A.topbar({ title: subject.name, end: titleEnd }),
-      h('div', { class: 'page', style: { 'padding-bottom': '40px' } },
-        pager,
+      h('div', { class: `page nb-page ${fab ? 'has-fab' : ''}` },
+        dateRow,
         h('div', { class: 'nb-actions' },
           listBtn,
           !readOnly && h('button', { class: 'btn sm', onclick: addPage }, '➕ דף חדש')),
-        topicRow,
-        tools,
-        penBar,
-        recPanel,
-        recList,
-        paper
-      )
+        paper,
+        recList
+      ),
+      penBar,
+      fab
     );
     await showPage();
-    setMode(readOnly ? 'read' : 'type', true);
+    setMode(readOnly ? 'read' : penModes[0] || 'read', true);
+    setRecLabel();
 
     return () => {
       mounted = false;

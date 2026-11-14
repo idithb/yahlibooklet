@@ -90,8 +90,11 @@
   const lockedText = 'היה בשיעור החופשי הקודם. יחזור בפעם הבאה 🙂';
 
   A.screens.freeHub = (root) => {
-    if (!A.free.current) { A.reset('home'); return; }
-    const locked = A.free.lockedNow();
+    if (!A.free.current || !A.state.settings.freeZone) { A.reset('home'); return; }
+    const allowed = A.state.settings.freeActivities;
+    let locked = A.free.lockedNow().filter((x) => allowed.includes(x));
+    // תמיד נשארת לפחות בחירה אחת
+    if (allowed.every((x) => locked.includes(x))) locked = [];
     const tile = (id, color, sub, target) => {
       const info = A.ACTIVITIES[id];
       const isLocked = locked.includes(id);
@@ -120,9 +123,9 @@
           }
         }, '🔓 בדיקה: לפתוח את הנעילה'),
         h('div', { class: 'free-tiles' },
-          tile('chess', '#4D5B6B', 'מול המחשב או מול חבר', 'chess'),
-          tile('memory', '#7C3AED', 'לבד או מול חבר', 'memory'),
-          tile('learn', '#157A47', 'לקרוא, ללמוד ולשחק בחידון', 'topics')
+          allowed.includes('chess') && tile('chess', '#4D5B6B', 'מול המחשב או מול חבר', 'chess'),
+          allowed.includes('memory') && tile('memory', '#7C3AED', 'לבד או מול חבר', 'memory'),
+          allowed.includes('learn') && tile('learn', '#157A47', 'לקרוא, ללמוד ולשחק בחידון', 'topics')
         )
       )
     );

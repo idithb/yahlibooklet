@@ -59,7 +59,7 @@
     } catch (e) { return false; }
   })();
 
-  A.VERSION = '17';
+  A.VERSION = '18';
 
   A.speechSupported = () => !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 

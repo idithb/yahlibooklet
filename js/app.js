@@ -3,10 +3,48 @@
   const A = window.App;
 
   A.installPrompt = null;
+  const installWatchers = new Set();
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     A.installPrompt = e;
+    installWatchers.forEach((f) => f());
   });
+  window.addEventListener('appinstalled', () => {
+    A.installPrompt = null;
+    installWatchers.forEach((f) => f());
+  });
+
+  // כרטיס התקנה: כפתור אחד כשהדפדפן מאפשר, ואחרת הוראות לפי המכשיר
+  A.installCard = () => {
+    if (A.isInstalled() || !location.protocol.startsWith('http')) return null;
+    const h = A.h;
+    const card = h('div', { class: 'install-card' });
+    const draw = () => {
+      if (!card.isConnected && card.dataset.drawn) { installWatchers.delete(draw); return; }
+      card.dataset.drawn = '1';
+      if (A.isInstalled()) { card.replaceChildren(h('b', null, '✅ המחברת מותקנת כאפליקציה')); return; }
+      card.replaceChildren(
+        h('b', null, '📲 להוריד את המחברת כאפליקציה'),
+        h('p', { class: 'small' }, 'כך יהיה אייקון במסך הבית, והמחברת תיפתח מלאה, גם בלי אינטרנט.'),
+        A.installPrompt
+          ? h('button', {
+              class: 'btn primary block', type: 'button',
+              onclick: async () => {
+                const p = A.installPrompt;
+                if (!p) return;
+                p.prompt();
+                const choice = await p.userChoice.catch(() => null);
+                A.installPrompt = null;
+                if (choice && choice.outcome === 'accepted') A.toast('המחברת מותקנת 🎉');
+                draw();
+              }
+            }, '📲 להתקין עכשיו')
+          : A.installSteps());
+    };
+    installWatchers.add(draw);
+    draw();
+    return card;
+  };
   // הוראות התקנה לפי המכשיר והדפדפן
   const ua = navigator.userAgent;
   const isIOS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
@@ -63,7 +101,9 @@
     })
     .then((best) => {
       A.state.quizBest = best || {};
-      A.reset(A.state.settings.setupDone ? 'home' : 'setup');
+      if (!A.state.settings.setupDone) A.reset('setup');
+      else if (!A.state.settings.onboardDone) A.reset('onboard', { step: 'intro' });
+      else A.reset('home');
     })
     .catch((err) => {
       console.error(err);

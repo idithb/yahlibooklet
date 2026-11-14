@@ -1,6 +1,6 @@
 // עובד הרקע של האפליקציה: שומר את כל הקבצים במכשיר כדי שהמחברת תיפתח גם בלי אינטרנט.
 // אחרי כל שינוי בקבצים צריך להעלות את מספר הגרסה, כדי שהמכשירים יקבלו את העדכון.
-const VERSION = 'machberet-v17';
+const VERSION = 'machberet-v18';
 const FILES = [
   './',
   'index.html',
@@ -73,7 +73,7 @@ const FILES = [
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION)
-    .then((c) => Promise.all(FILES.map((f) => c.add(f).catch(() => null))))
+    .then((c) => Promise.all(FILES.map((f) => c.add(new Request(f, { cache: 'reload' })).catch(() => null))))
     .then(() => self.skipWaiting()));
 });
 
@@ -107,6 +107,11 @@ self.addEventListener('fetch', (e) => {
       const timer = setTimeout(fallback, 4000);
       fetch(req, { cache: 'no-cache' }).then((res) => {
         clearTimeout(timer);
+        if (!res.ok) {
+          // האתר לא זמין (שגיאת שרת): פותחים את העותק השמור במכשיר
+          fromCache(req).then((hit) => { if (!done) { done = true; resolve(hit || res); } });
+          return;
+        }
         remember(req, res);
         if (!done) { done = true; resolve(res); }
       }).catch(() => {

@@ -409,8 +409,6 @@
     drawSubjects();
 
     body.append(
-      params.first && h('div', { class: 'notice', style: { 'margin-bottom': '12px' } },
-        h('b', null, 'כמעט סיימנו! '), 'הקלידו את המערכת בטבלה, ואז לחצו על "חזרה" כדי להגיע למסך של הילד.'),
       h('div', { class: 'row', style: { 'margin-bottom': '10px' } },
         h('p', { class: 'spacer small' }, 'מקלידים בכל משבצת את שם המקצוע. לשעה חופשית כותבים ', h('b', null, 'חופשי'), ', ולהפסקה ', h('b', null, 'הפסקה'), '.'),
         saved
@@ -438,6 +436,8 @@
       h('div', { class: 'card' }, subjectsHolder)
     );
   };
+
+  A.schedulePanel = (body, params) => PANELS.schedule(body, params);
 
   // צפייה במחברות
   PANELS.notebooks = async (body) => {
@@ -567,6 +567,12 @@
             }
           }, 'החלפת קוד')
         ),
+        h('div', { class: 'card stack' },
+          h('b', null, '📓 מה יש במחברת'),
+          A.toolsChooser()),
+        h('div', { class: 'card stack' },
+          h('b', null, '🎈 אזור חופשי'),
+          A.freeChooser()),
         h('div', { class: 'card' },
           h('div', { class: 'toggle-row', style: { 'border-bottom': '0', padding: '0' } },
             h('input', {
@@ -638,14 +644,14 @@
       kv,
       pages: await A.db.all('pages'),
       events: await A.db.all('events'),
-      audio: await Promise.all(audio.map(async (row) => ({ ...row, blob: await blobToBase64(row.blob) })))
+      audio: await Promise.all(audio.map(async (row) => ({ ...row, blob: row.blob ? await blobToBase64(row.blob) : null })))
     };
     download(new Blob([JSON.stringify(data)], { type: 'application/json' }), `גיבוי-מחברת-${A.dateKey()}.json`);
   }
 
   async function restoreBackup(data) {
     if (!data || data.app !== 'machberet' || !data.kv) throw new Error('bad backup');
-    const audio = await Promise.all((data.audio || []).map(async (row) => ({ ...row, blob: await (await fetch(row.blob)).blob() })));
+    const audio = await Promise.all((data.audio || []).map(async (row) => ({ ...row, blob: row.blob ? await (await fetch(row.blob)).blob() : null })));
     for (const s of ['kv', 'pages', 'audio', 'events']) await A.db.clear(s);
     for (const [k, v] of Object.entries(data.kv)) await A.db.put('kv', v, k);
     for (const p of data.pages || []) await A.db.put('pages', p);

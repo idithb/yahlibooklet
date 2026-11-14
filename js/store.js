@@ -46,7 +46,8 @@
 
   A.state = {};
   A.defaults = () => ({
-    settings: { setupDone: false, childName: '', pinHash: '', freeTimeLock: true, freeResetAt: null, transcribe: false, disabledTopics: [] },
+    settings: { setupDone: false, childName: '', pinHash: '', freeTimeLock: true, freeResetAt: null, transcribe: false, disabledTopics: [],
+      tools: { type: true, write: true, record: true }, freeZone: true, freeActivities: ['chess', 'memory', 'learn'], onboardDone: true },
     subjects: [],
     timetable: {
       periods: DEFAULT_TIMES.map(([start, end]) => ({ start, end })),
@@ -63,6 +64,7 @@
       A.state[key] = v === undefined ? d[key] : v;
     }
     A.state.settings = { ...d.settings, ...A.state.settings };
+    A.state.settings.tools = { ...d.settings.tools, ...(A.state.settings.tools || {}) };
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   };
   A.save = (key) => A.db.put('kv', A.state[key], key);
